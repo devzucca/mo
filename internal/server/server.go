@@ -180,7 +180,9 @@ func (s *State) RemoveFile(id int) bool {
 			}
 		}
 		if !stillReferenced {
-			s.watcher.Remove(removedPath)
+			if err := s.watcher.Remove(removedPath); err != nil {
+				slog.Warn("failed to unwatch file", "path", removedPath, "error", err)
+			}
 		}
 	}
 
