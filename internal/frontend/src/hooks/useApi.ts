@@ -38,3 +38,8 @@ export async function openRelativeFile(
   if (!res.ok) throw new Error("Failed to open file");
   return res.json();
 }
+
+export async function removeFile(id: number): Promise<void> {
+  const res = await fetch(`/_/api/files/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove file");
+}

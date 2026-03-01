@@ -139,6 +139,55 @@ func (s *State) FindGroupForFile(id int) string {
 	return ""
 }
 
+func (s *State) RemoveFile(id int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var removedPath string
+	found := false
+	for gName, g := range s.groups {
+		for i, f := range g.Files {
+			if f.ID == id {
+				removedPath = f.Path
+				g.Files = append(g.Files[:i], g.Files[i+1:]...)
+				if len(g.Files) == 0 {
+					delete(s.groups, gName)
+				}
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+
+	// Remove watcher only if no other file references the same path
+	if s.watcher != nil && removedPath != "" {
+		stillReferenced := false
+		for _, g := range s.groups {
+			for _, f := range g.Files {
+				if f.Path == removedPath {
+					stillReferenced = true
+					break
+				}
+			}
+			if stillReferenced {
+				break
+			}
+		}
+		if !stillReferenced {
+			s.watcher.Remove(removedPath)
+		}
+	}
+
+	s.sendEvent(sseEvent{Name: "update", Data: "{}"})
+	return true
+}
+
 func (s *State) Subscribe() chan sseEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -241,6 +290,7 @@ func NewHandler(state *State) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /_/api/files", handleAddFile(state))
+	mux.HandleFunc("DELETE /_/api/files/{id}", handleRemoveFile(state))
 	mux.HandleFunc("GET /_/api/groups", handleGroups(state))
 	mux.HandleFunc("GET /_/api/files/{id}/content", handleFileContent(state))
 	mux.HandleFunc("GET /_/api/files/{id}/raw/{path...}", handleFileRaw(state))
@@ -280,6 +330,21 @@ func handleAddFile(state *State) http.HandlerFunc {
 		if err := json.NewEncoder(w).Encode(entry); err != nil {
 			slog.Error("failed to encode response", "error", err)
 		}
+	}
+}
+
+func handleRemoveFile(state *State) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			http.Error(w, "invalid file id", http.StatusBadRequest)
+			return
+		}
+		if !state.RemoveFile(id) {
+			http.Error(w, "file not found", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

@@ -10,6 +10,7 @@ import { fetchFileContent, openRelativeFile } from "../hooks/useApi";
 import { RawToggle } from "./RawToggle";
 import { TocToggle } from "./TocToggle";
 import { CopyButton } from "./CopyButton";
+import { RemoveButton } from "./RemoveButton";
 import { resolveLink, resolveImageSrc, extractLanguage } from "../utils/resolve";
 import { extractText } from "../utils/extractText";
 import type { TocHeading } from "./TocPanel";
@@ -23,6 +24,7 @@ interface MarkdownViewerProps {
   onHeadingsChange: (headings: TocHeading[]) => void;
   isTocOpen: boolean;
   onTocToggle: () => void;
+  onRemoveFile: () => void;
 }
 
 let mermaidInitialized = false;
@@ -356,7 +358,7 @@ function RawView({ content }: { content: string }) {
   );
 }
 
-export function MarkdownViewer({ fileId, revision, onFileOpened, onHeadingsChange, isTocOpen, onTocToggle }: MarkdownViewerProps) {
+export function MarkdownViewer({ fileId, revision, onFileOpened, onHeadingsChange, isTocOpen, onTocToggle, onRemoveFile }: MarkdownViewerProps) {
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
   const [isRawView, setIsRawView] = useState(false);
@@ -518,6 +520,7 @@ export function MarkdownViewer({ fileId, revision, onFileOpened, onHeadingsChang
         <TocToggle isTocOpen={isTocOpen} onToggle={onTocToggle} />
         <RawToggle isRaw={isRawView} onToggle={() => setIsRawView((v) => !v)} />
         <CopyButton content={content} />
+        <RemoveButton onRemove={onRemoveFile} />
       </div>
     </div>
   );

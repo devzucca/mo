@@ -8,7 +8,7 @@ import type { TocHeading } from "./components/TocPanel";
 import { useSSE } from "./hooks/useSSE";
 import { useActiveHeading } from "./hooks/useActiveHeading";
 import type { Group } from "./hooks/useApi";
-import { fetchGroups } from "./hooks/useApi";
+import { fetchGroups, removeFile } from "./hooks/useApi";
 import { allFileIds, parseGroupFromPath } from "./utils/groups";
 
 export function App() {
@@ -69,13 +69,15 @@ export function App() {
 
   useEffect(() => {
     const group = groups.find((g) => g.name === activeGroup);
-    if (group && group.files.length > 0) {
-      setActiveFileId((prev) => {
-        const stillExists = group.files.some((f) => f.id === prev);
-        if (stillExists) return prev;
-        return group.files[0].id;
-      });
+    if (!group || group.files.length === 0) {
+      setActiveFileId(null);
+      return;
     }
+    setActiveFileId((prev) => {
+      const stillExists = group.files.some((f) => f.id === prev);
+      if (stillExists) return prev;
+      return group.files[0].id;
+    });
   }, [groups, activeGroup]);
 
   useEffect(() => {
@@ -87,9 +89,7 @@ export function App() {
   // Auto open/close sidebar based on file count in active group
   useEffect(() => {
     const group = groups.find((g) => g.name === activeGroup);
-    if (group) {
-      setSidebarOpen(group.files.length >= 2);
-    }
+    setSidebarOpen(group != null && group.files.length >= 2);
   }, [groups, activeGroup]);
 
   useSSE({
@@ -116,6 +116,12 @@ export function App() {
   const handleFileOpened = useCallback((fileId: number) => {
     setActiveFileId(fileId);
   }, []);
+
+  const handleRemoveFile = useCallback(() => {
+    if (activeFileId != null) {
+      removeFile(activeFileId);
+    }
+  }, [activeFileId]);
 
   const headingIds = useMemo(() => headings.map((h) => h.id), [headings]);
 
@@ -173,6 +179,7 @@ export function App() {
                 onHeadingsChange={setHeadings}
                 isTocOpen={tocOpen}
                 onTocToggle={() => setTocOpen((v) => !v)}
+                onRemoveFile={handleRemoveFile}
               />
             ) : (
               <div className="flex items-center justify-center h-50 text-gh-text-secondary text-sm">
