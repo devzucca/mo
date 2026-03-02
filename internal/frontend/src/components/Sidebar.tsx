@@ -107,19 +107,6 @@ function SortableFileItem({
   );
 }
 
-const COLLAPSED_STORAGE_KEY = "mo-sidebar-tree-collapsed";
-
-function getInitialCollapsed(group: string): Set<string> {
-  try {
-    const stored = localStorage.getItem(COLLAPSED_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (parsed[group]) return new Set(parsed[group]);
-    }
-  } catch { /* ignore */ }
-  return new Set();
-}
-
 interface SidebarProps {
   groups: Group[];
   activeGroup: string;
@@ -143,40 +130,6 @@ export function Sidebar({
   const resizeDragging = useRef(false);
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() =>
-    getInitialCollapsed(activeGroup),
-  );
-  const prevGroupRef = useRef(activeGroup);
-
-  // Reset collapsed paths when group changes (skip initial mount)
-  useEffect(() => {
-    if (prevGroupRef.current !== activeGroup) {
-      prevGroupRef.current = activeGroup;
-      setCollapsedPaths(getInitialCollapsed(activeGroup));
-    }
-  }, [activeGroup]);
-
-  // Persist collapsed paths to localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(COLLAPSED_STORAGE_KEY);
-      const all = stored ? JSON.parse(stored) : {};
-      all[activeGroup] = [...collapsedPaths];
-      localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(all));
-    } catch { /* ignore */ }
-  }, [collapsedPaths, activeGroup]);
-
-  const handleToggleCollapse = useCallback((path: string) => {
-    setCollapsedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -290,6 +243,7 @@ export function Sidebar({
         {viewMode === "tree" ? (
           <TreeView
             files={files}
+            activeGroup={activeGroup}
             activeFileId={activeFileId}
             menuOpenId={menuOpenId}
             otherGroups={otherGroups}
@@ -299,8 +253,6 @@ export function Sidebar({
             onMoveToGroup={handleMoveToGroup}
             onRemove={handleRemove}
             menuRef={menuRef}
-            collapsedPaths={collapsedPaths}
-            onToggleCollapse={handleToggleCollapse}
           />
         ) : (
           <DndContext

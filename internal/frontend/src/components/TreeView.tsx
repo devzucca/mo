@@ -1,10 +1,24 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileEntry, Group } from "../hooks/useApi";
 import { buildTree, type TreeNode } from "../utils/buildTree";
 import { FileContextMenu } from "./FileContextMenu";
 
+const COLLAPSED_STORAGE_KEY = "mo-sidebar-tree-collapsed";
+
+function getInitialCollapsed(group: string): Set<string> {
+  try {
+    const stored = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed[group]) return new Set(parsed[group]);
+    }
+  } catch { /* ignore */ }
+  return new Set();
+}
+
 interface TreeViewProps {
   files: FileEntry[];
+  activeGroup: string;
   activeFileId: number | null;
   menuOpenId: number | null;
   otherGroups: Group[];
@@ -14,12 +28,11 @@ interface TreeViewProps {
   onMoveToGroup: (id: number, group: string) => void;
   onRemove: (id: number) => void;
   menuRef: React.RefObject<HTMLDivElement | null>;
-  collapsedPaths: Set<string>;
-  onToggleCollapse: (path: string) => void;
 }
 
 export function TreeView({
   files,
+  activeGroup,
   activeFileId,
   menuOpenId,
   otherGroups,
@@ -29,10 +42,40 @@ export function TreeView({
   onMoveToGroup,
   onRemove,
   menuRef,
-  collapsedPaths,
-  onToggleCollapse,
 }: TreeViewProps) {
   const tree = useMemo(() => buildTree(files), [files]);
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() =>
+    getInitialCollapsed(activeGroup),
+  );
+  const prevGroupRef = useRef(activeGroup);
+
+  useEffect(() => {
+    if (prevGroupRef.current !== activeGroup) {
+      prevGroupRef.current = activeGroup;
+      setCollapsedPaths(getInitialCollapsed(activeGroup));
+    }
+  }, [activeGroup]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+      const all = stored ? JSON.parse(stored) : {};
+      all[activeGroup] = [...collapsedPaths];
+      localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(all));
+    } catch { /* ignore */ }
+  }, [collapsedPaths, activeGroup]);
+
+  const handleToggleCollapse = useCallback((path: string) => {
+    setCollapsedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <>
@@ -51,7 +94,7 @@ export function TreeView({
           onRemove={onRemove}
           menuRef={menuRef}
           collapsedPaths={collapsedPaths}
-          onToggleCollapse={onToggleCollapse}
+          onToggleCollapse={handleToggleCollapse}
         />
       ))}
     </>

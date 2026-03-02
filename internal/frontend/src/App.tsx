@@ -137,12 +137,15 @@ export function App() {
 
   const currentViewMode: ViewMode = viewModes[activeGroup] ?? "flat";
 
+  useEffect(() => {
+    localStorage.setItem(VIEWMODE_STORAGE_KEY, JSON.stringify(viewModes));
+  }, [viewModes]);
+
   const handleViewModeToggle = useCallback(() => {
     setViewModes((prev) => {
       const current = prev[activeGroup] ?? "flat";
-      const next = { ...prev, [activeGroup]: current === "flat" ? "tree" as ViewMode : "flat" as ViewMode };
-      localStorage.setItem(VIEWMODE_STORAGE_KEY, JSON.stringify(next));
-      return next;
+      const nextMode: ViewMode = current === "flat" ? "tree" : "flat";
+      return { ...prev, [activeGroup]: nextMode };
     });
   }, [activeGroup]);
 
