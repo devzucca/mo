@@ -247,11 +247,8 @@ func tryAddToExisting(addr string, files []string) bool {
 	slog.Info("added files to existing server", "count", len(files), "addr", addr)
 	fmt.Fprintf(os.Stderr, "mo: added %d file(s) to http://%s\n", len(files), addr)
 
-	if !noOpen && (isNewGroup || open) {
-		url := fmt.Sprintf("http://%s/%s", addr, target)
-		if err := browser.OpenURL(url); err != nil {
-			slog.Warn("could not open browser", "error", err)
-		}
+	if isNewGroup || open {
+		openBrowser(addr)
 	}
 
 	return true
