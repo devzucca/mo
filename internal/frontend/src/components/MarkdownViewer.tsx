@@ -14,12 +14,14 @@ import { RemoveButton } from "./RemoveButton";
 import { resolveLink, resolveImageSrc, extractLanguage } from "../utils/resolve";
 import { extractText } from "../utils/extractText";
 import { parseFrontmatter } from "../utils/frontmatter";
+import { stripMdxSyntax } from "../utils/mdx";
 import type { TocHeading } from "./TocPanel";
 import type { Components } from "react-markdown";
 import "github-markdown-css/github-markdown.css";
 
 interface MarkdownViewerProps {
   fileId: number;
+  fileName: string;
   revision: number;
   onFileOpened: (fileId: number) => void;
   onHeadingsChange: (headings: TocHeading[]) => void;
@@ -370,7 +372,7 @@ function RawView({ content }: { content: string }) {
   );
 }
 
-export function MarkdownViewer({ fileId, revision, onFileOpened, onHeadingsChange, isTocOpen, onTocToggle, onRemoveFile }: MarkdownViewerProps) {
+export function MarkdownViewer({ fileId, fileName, revision, onFileOpened, onHeadingsChange, isTocOpen, onTocToggle, onRemoveFile }: MarkdownViewerProps) {
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
   const [isRawView, setIsRawView] = useState(false);
@@ -399,8 +401,6 @@ export function MarkdownViewer({ fileId, revision, onFileOpened, onHeadingsChang
 
   const handleLinkClick = useCallback(
     async (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-      if (!href.endsWith(".md")) return;
-      if (href.startsWith("http://") || href.startsWith("https://")) return;
       e.preventDefault();
       try {
         const entry = await openRelativeFile(fileId, href);
@@ -504,7 +504,8 @@ export function MarkdownViewer({ fileId, revision, onFileOpened, onHeadingsChang
     if (isRawView) {
       return <RawView content={content} />;
     }
-    const md = parsed ? parsed.content : content;
+    const base = parsed ? parsed.content : content;
+    const md = fileName.endsWith(".mdx") ? stripMdxSyntax(base) : base;
     return (
       <>
         {parsed && <FrontmatterBlock yaml={parsed.yaml} />}
@@ -513,7 +514,7 @@ export function MarkdownViewer({ fileId, revision, onFileOpened, onHeadingsChang
         </Markdown>
       </>
     );
-  }, [content, isRawView, components]);
+  }, [content, isRawView, components, fileName]);
 
   const prevHeadingsKey = useRef("");
   useEffect(() => {
