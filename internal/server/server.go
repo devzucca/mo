@@ -240,7 +240,7 @@ func (s *State) MoveFile(id int, targetGroup string) error {
 			break
 		}
 	}
-	if len(sourceGroup.Files) == 0 {
+	if len(sourceGroup.Files) == 0 && !s.groupHasPatterns(sourceGroupName) {
 		delete(s.groups, sourceGroupName)
 	}
 
@@ -386,6 +386,10 @@ func (s *State) AddPattern(absPattern, groupName string) (int, error) {
 			Group:        groupName,
 		}
 		s.patterns = append(s.patterns, gp)
+		// Ensure the group exists even if no files match yet.
+		if _, ok := s.groups[groupName]; !ok {
+			s.groups[groupName] = &Group{Name: groupName}
+		}
 		return gp, true
 	}()
 	if !added {
