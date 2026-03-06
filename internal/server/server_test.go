@@ -986,6 +986,10 @@ func TestEnableBackup_ReflectsLatestState(t *testing.T) {
 
 	mu.Lock()
 	count := len(saved)
+	if count == 0 {
+		mu.Unlock()
+		t.Fatal("backup callback should have been called after state change")
+	}
 	last := saved[count-1]
 	mu.Unlock()
 
