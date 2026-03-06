@@ -1115,6 +1115,10 @@ func handleSSE(state *State) http.HandlerFunc {
 		ch := state.Subscribe()
 		defer state.Unsubscribe(ch)
 
+		// Send server identity on connection
+		fmt.Fprintf(w, "event: started\ndata: {\"pid\":%d}\n\n", os.Getpid())
+		flusher.Flush()
+
 		ctx := r.Context()
 		for {
 			select {

@@ -1,14 +1,20 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func newTestState(t *testing.T) *State {
@@ -802,3 +808,74 @@ func TestHandleAddPattern(t *testing.T) {
 		t.Fatalf("got matched=%d, want 1", resp.Matched)
 	}
 }
+
+func TestHandleSSE_StartedEvent(t *testing.T) {
+	s := newTestState(t)
+	handler := handleSSE(s)
+
+	pr, pw := io.Pipe()
+	defer pr.Close()
+
+	rec := &flushRecorder{pw: pw}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	req := httptest.NewRequest(http.MethodGet, "/_/events", nil).WithContext(ctx)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		handler.ServeHTTP(rec, req)
+		pw.Close()
+	}()
+	t.Cleanup(func() {
+		cancel()
+		wg.Wait()
+	})
+
+	scanner := bufio.NewScanner(pr)
+	var eventLine, dataLine string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			eventLine = line
+		} else if strings.HasPrefix(line, "data: ") {
+			dataLine = line
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner error while reading SSE stream: %v", err)
+	}
+
+	if eventLine != "event: started" {
+		t.Fatalf("got event line %q, want %q", eventLine, "event: started")
+	}
+
+	wantData := fmt.Sprintf(`data: {"pid":%d}`, os.Getpid())
+	if dataLine != wantData {
+		t.Fatalf("got data line %q, want %q", dataLine, wantData)
+	}
+}
+
+// flushRecorder implements http.ResponseWriter and http.Flusher,
+// writing output to an io.Writer for streaming tests.
+type flushRecorder struct {
+	pw      io.Writer
+	headers http.Header
+}
+
+func (f *flushRecorder) Header() http.Header {
+	if f.headers == nil {
+		f.headers = make(http.Header)
+	}
+	return f.headers
+}
+
+func (f *flushRecorder) Write(b []byte) (int, error) {
+	return f.pw.Write(b)
+}
+
+func (f *flushRecorder) WriteHeader(_ int) {}
+
+func (f *flushRecorder) Flush() {}
