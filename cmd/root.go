@@ -26,6 +26,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	// probeTimeoutFast is used when a missing server is the normal case (e.g. first launch).
+	probeTimeoutFast = 500 * time.Millisecond
+	// probeTimeoutDefault is used when the server is expected to be running.
+	probeTimeoutDefault = 2 * time.Second
+)
+
 var (
 	target         string
 	port           int
@@ -35,7 +42,8 @@ var (
 	shutdownServer bool
 	foreground     bool
 	statusServer   bool
-	watchPatterns  []string
+	watchPatterns   []string
+	unwatchPatterns []string
 )
 
 var rootCmd = &cobra.Command{
@@ -104,7 +112,8 @@ Glob Patterns:
 
   $ mo -w '**/*.md'                   Watch all .md files recursively
   $ mo -w 'docs/**/*.md' -t docs      Watch docs/ tree in "docs" group
-  $ mo -w '*.md' -w 'docs/**/*.md'    Watch multiple patterns`,
+  $ mo -w '*.md' -w 'docs/**/*.md'    Watch multiple patterns
+  $ mo --unwatch '**/*.md'            Stop watching a pattern`,
 	Args:    cobra.ArbitraryArgs,
 	RunE:    run,
 	Version: version.Version,
@@ -128,6 +137,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&foreground, "foreground", false, "Run mo server in foreground (do not background)")
 	rootCmd.Flags().BoolVar(&statusServer, "status", false, "Show status of all running mo servers")
 	rootCmd.Flags().StringArrayVarP(&watchPatterns, "watch", "w", nil, "Glob pattern to watch for matching files (repeatable)")
+	rootCmd.Flags().StringArrayVar(&unwatchPatterns, "unwatch", nil, "Remove a watched glob pattern (repeatable)")
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -148,6 +158,27 @@ func run(cmd *cobra.Command, args []string) error {
 
 	if shutdownServer {
 		return doShutdown(addr)
+	}
+
+	if len(unwatchPatterns) > 0 {
+		if len(watchPatterns) > 0 {
+			return fmt.Errorf("cannot use --unwatch with --watch")
+		}
+		if len(args) > 0 {
+			return fmt.Errorf("cannot use --unwatch with file arguments")
+		}
+
+		resolved, err := resolvePatterns(unwatchPatterns)
+		if err != nil {
+			return err
+		}
+
+		resolvedTarget, err := server.ResolveGroupName(target)
+		if err != nil {
+			return fmt.Errorf("invalid target group name %q: %w", target, err)
+		}
+
+		return doUnwatch(addr, resolved, resolvedTarget)
 	}
 
 	if restore != "" {
@@ -226,7 +257,7 @@ func resolvePatterns(patterns []string) ([]string, error) {
 	var resolved []string
 	for _, pat := range patterns {
 		if !hasGlobChars(pat) {
-			return nil, fmt.Errorf("--watch pattern %q does not contain glob characters (* ? [); use file arguments instead", pat)
+			return nil, fmt.Errorf("pattern %q does not contain glob characters (* ? [); use file arguments instead", pat)
 		}
 		abs, err := filepath.Abs(pat)
 		if err != nil {
@@ -255,32 +286,21 @@ func resolveFiles(args []string) ([]string, error) {
 }
 
 func tryAddToExisting(addr string, files []string, patterns []string) bool {
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-
-	resp, err := client.Get(fmt.Sprintf("http://%s/_/api/groups", addr))
+	result, err := probeServer(addr, probeTimeoutFast)
 	if err != nil {
 		return false
 	}
 
-	var existingGroups []struct {
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&existingGroups); err != nil {
-		resp.Body.Close()
-		return false
-	}
-	resp.Body.Close()
-
 	isNewGroup := true
-	for _, g := range existingGroups {
-		if g.Name == target {
+	for _, g := range result.groups {
+		if g == target {
 			isNewGroup = false
 			break
 		}
 	}
 
-	postItems(client, addr, "/_/api/files", "path", target, files)
-	postItems(client, addr, "/_/api/patterns", "pattern", target, patterns)
+	postItems(result.client, addr, "/_/api/files", "path", target, files)
+	postItems(result.client, addr, "/_/api/patterns", "pattern", target, patterns)
 
 	added := len(files) + len(patterns)
 	slog.Info("added to existing server", "files", len(files), "patterns", len(patterns), "addr", addr)
@@ -316,22 +336,54 @@ func postItems(client *http.Client, addr, endpoint, key, group string, items []s
 	}
 }
 
-func doShutdown(addr string) error {
-	client := &http.Client{Timeout: 2 * time.Second}
+type probeResult struct {
+	client *http.Client
+	groups []string
+}
 
-	resp, err := client.Get(fmt.Sprintf("http://%s/_/api/groups", addr))
+// probeServer checks that a mo server is running on addr by calling
+// GET /_/api/status and validating the response contains a version field.
+func probeServer(addr string, timeout ...time.Duration) (*probeResult, error) {
+	t := probeTimeoutDefault
+	if len(timeout) > 0 {
+		t = timeout[0]
+	}
+	client := &http.Client{Timeout: t}
+	resp, err := client.Get(fmt.Sprintf("http://%s/_/api/status", addr))
 	if err != nil {
-		return fmt.Errorf("no mo server found on %s", addr)
+		return nil, fmt.Errorf("no mo server found on %s", addr)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server on %s returned %s", addr, resp.Status)
 	}
 
-	var groups []json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&groups); err != nil {
-		resp.Body.Close()
-		return fmt.Errorf("server on %s is not a mo instance", addr)
+	var status struct {
+		Version string `json:"version"`
+		PID     int    `json:"pid"`
+		Groups  []struct {
+			Name string `json:"name"`
+		} `json:"groups"`
 	}
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil || status.Version == "" {
+		return nil, fmt.Errorf("server on %s is not a mo instance", addr)
+	}
 
-	resp, err = client.Post(fmt.Sprintf("http://%s/_/api/shutdown", addr), "application/json", nil)
+	groups := make([]string, len(status.Groups))
+	for i, g := range status.Groups {
+		groups[i] = g.Name
+	}
+	return &probeResult{client: client, groups: groups}, nil
+}
+
+func doShutdown(addr string) error {
+	result, err := probeServer(addr)
+	if err != nil {
+		return err
+	}
+
+	resp, err := result.client.Post(fmt.Sprintf("http://%s/_/api/shutdown", addr), "application/json", nil)
 	if err != nil {
 		return fmt.Errorf("failed to send shutdown request: %w", err)
 	}
@@ -346,10 +398,51 @@ func doShutdown(addr string) error {
 	return nil
 }
 
+func doUnwatch(addr string, patterns []string, groupName string) error {
+	result, err := probeServer(addr)
+	if err != nil {
+		return err
+	}
+
+	for _, pat := range patterns {
+		body, err := json.Marshal(map[string]string{
+			"pattern": pat,
+			"group":   groupName,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("http://%s/_/api/patterns", addr), bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := result.client.Do(req) //nolint:gosec // URL is constructed from local addr, not user-supplied
+		if err != nil {
+			return fmt.Errorf("failed to send unwatch request: %w", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("watch pattern %q not found in group %q (use --status to see registered patterns)", pat, groupName)
+		}
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("unexpected response from server: %s", resp.Status)
+		}
+
+		slog.Info("pattern removed", "pattern", pat, "group", groupName)
+		fmt.Fprintf(os.Stderr, "mo: unwatched %s\n", pat)
+	}
+
+	return nil
+}
+
 type statusResponse struct {
-	Version  string   `json:"version"`
-	Revision string   `json:"revision"`
-	PID      int      `json:"pid"`
+	Version  string `json:"version"`
+	Revision string `json:"revision"`
+	PID      int    `json:"pid"`
 	Groups   []struct {
 		Name  string `json:"name"`
 		Files []struct {
@@ -357,8 +450,8 @@ type statusResponse struct {
 			ID   int    `json:"id"`
 			Path string `json:"path"`
 		} `json:"files"`
+		Patterns []string `json:"patterns,omitempty"`
 	} `json:"groups"`
-	Patterns []string `json:"patterns,omitempty"`
 }
 
 func doStatus() error {
@@ -398,9 +491,9 @@ func doStatus() error {
 		fmt.Fprintf(os.Stderr, "http://%s (pid %d, %s)\n", addr, status.PID, ver)
 		for _, g := range status.Groups {
 			fmt.Fprintf(os.Stderr, "  %s: %d file(s)\n", g.Name, len(g.Files))
-		}
-		for _, pat := range status.Patterns {
-			fmt.Fprintf(os.Stderr, "  watch: %s\n", pat)
+			if len(g.Patterns) > 0 {
+				fmt.Fprintf(os.Stderr, "    watching: %s\n", strings.Join(g.Patterns, ", "))
+			}
 		}
 		if i < len(ports)-1 {
 			fmt.Fprintln(os.Stderr)
@@ -592,7 +685,7 @@ func waitForReady(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(fmt.Sprintf("http://%s/_/api/groups", addr))
+		resp, err := client.Get(fmt.Sprintf("http://%s/_/api/status", addr))
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {

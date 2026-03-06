@@ -240,7 +240,7 @@ func (s *State) MoveFile(id int, targetGroup string) error {
 			break
 		}
 	}
-	if len(sourceGroup.Files) == 0 {
+	if len(sourceGroup.Files) == 0 && !s.groupHasPatterns(sourceGroupName) {
 		delete(s.groups, sourceGroupName)
 	}
 
@@ -267,7 +267,7 @@ func (s *State) RemoveFile(id int) bool {
 			if f.ID == id {
 				removedPath = f.Path
 				g.Files = append(g.Files[:i], g.Files[i+1:]...)
-				if len(g.Files) == 0 {
+				if len(g.Files) == 0 && !s.groupHasPatterns(gName) {
 					delete(s.groups, gName)
 				}
 				found = true
@@ -386,6 +386,10 @@ func (s *State) AddPattern(absPattern, groupName string) (int, error) {
 			Group:        groupName,
 		}
 		s.patterns = append(s.patterns, gp)
+		// Ensure the group exists even if no files match yet.
+		if _, ok := s.groups[groupName]; !ok {
+			s.groups[groupName] = &Group{Name: groupName}
+		}
 		return gp, true
 	}()
 	if !added {
@@ -415,6 +419,52 @@ func (s *State) Patterns() []*GlobPattern {
 	result := make([]*GlobPattern, len(s.patterns))
 	copy(result, s.patterns)
 	return result
+}
+
+// PatternsForGroup returns the pattern strings for a specific group.
+func (s *State) PatternsForGroup(groupName string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result []string
+	for _, p := range s.patterns {
+		if p.Group == groupName {
+			result = append(result, p.Pattern)
+		}
+	}
+	return result
+}
+
+// RemovePattern removes a glob pattern from the watch list.
+// Returns true if the pattern was found and removed.
+func (s *State) RemovePattern(absPattern, groupName string) bool {
+	var removed *GlobPattern
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, p := range s.patterns {
+			if p.Pattern == absPattern && p.Group == groupName {
+				removed = p
+				s.patterns = append(s.patterns[:i], s.patterns[i+1:]...)
+				break
+			}
+		}
+	}()
+
+	if removed == nil {
+		return false
+	}
+
+	s.walkDirsForPattern(removed, s.removeDirWatch)
+
+	slog.Info("pattern removed", "pattern", absPattern, "group", groupName)
+	s.mu.Lock()
+	// Clean up empty group when last pattern is removed and no files remain.
+	if g, ok := s.groups[groupName]; ok && len(g.Files) == 0 && !s.groupHasPatterns(groupName) {
+		delete(s.groups, groupName)
+	}
+	s.sendEvent(sseEvent{Name: "update", Data: "{}"})
+	s.mu.Unlock()
+	return true
 }
 
 // RestoreData represents the state to be persisted across restarts.
@@ -463,6 +513,61 @@ func (s *State) ExportState() (string, error) {
 	}
 
 	return WriteRestoreFile(data)
+}
+
+// groupHasPatterns reports whether the group has any registered watch patterns.
+// Caller must hold s.mu.
+func (s *State) groupHasPatterns(groupName string) bool {
+	for _, p := range s.patterns {
+		if p.Group == groupName {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *State) walkDirsForPattern(gp *GlobPattern, fn func(string)) {
+	if s.watcher == nil {
+		return
+	}
+	if !gp.IsRecursive() {
+		fn(gp.BaseDir)
+		return
+	}
+
+	if err := filepath.WalkDir(gp.BaseDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			// Best-effort: still process this path so unwatch can decrement refcounts.
+			fn(path)
+			return fs.SkipDir
+		}
+		if d.IsDir() {
+			fn(path)
+		}
+		return nil
+	}); err != nil {
+		// BaseDir may have been deleted; still clean up the base directory entry.
+		fn(gp.BaseDir)
+		slog.Warn("failed to walk directories for pattern", "pattern", gp.Pattern, "base", gp.BaseDir, "error", err)
+	}
+}
+
+func (s *State) removeDirWatch(dir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if count, ok := s.watchedDirs[dir]; ok {
+		count--
+		if count <= 0 {
+			delete(s.watchedDirs, dir)
+			if s.watcher != nil {
+				if err := s.watcher.Remove(dir); err != nil {
+					slog.Warn("failed to remove directory watch", "dir", dir, "error", err)
+				}
+			}
+		} else {
+			s.watchedDirs[dir] = count
+		}
+	}
 }
 
 func (s *State) watchLoop() {
@@ -543,23 +648,7 @@ func (s *State) sendEvent(e sseEvent) {
 }
 
 func (s *State) watchDirsForPattern(gp *GlobPattern) {
-	if s.watcher == nil {
-		return
-	}
-	if !gp.IsRecursive() {
-		s.addDirWatch(gp.BaseDir)
-		return
-	}
-
-	filepath.WalkDir(gp.BaseDir, func(path string, d os.DirEntry, err error) error { //nolint:errcheck
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			s.addDirWatch(path)
-		}
-		return nil
-	})
+	s.walkDirsForPattern(gp, s.addDirWatch)
 }
 
 func (s *State) addDirWatch(dir string) {
@@ -568,6 +657,7 @@ func (s *State) addDirWatch(dir string) {
 	s.watchedDirs[dir]++
 	if s.watchedDirs[dir] == 1 && s.watcher != nil {
 		if err := s.watcher.Add(dir); err != nil {
+			delete(s.watchedDirs, dir)
 			slog.Warn("failed to watch directory", "path", dir, "error", err)
 		}
 	}
@@ -645,7 +735,7 @@ type addFileRequest struct {
 	Group string `json:"group"`
 }
 
-type addPatternRequest struct {
+type patternRequest struct {
 	Pattern string `json:"pattern"`
 	Group   string `json:"group"`
 }
@@ -676,6 +766,7 @@ func NewHandler(state *State) http.Handler {
 	mux.HandleFunc("GET /_/api/files/{id}/raw/{path...}", handleFileRaw(state))
 	mux.HandleFunc("POST /_/api/files/open", handleOpenFile(state))
 	mux.HandleFunc("POST /_/api/patterns", handleAddPattern(state))
+	mux.HandleFunc("DELETE /_/api/patterns", handleRemovePattern(state))
 	mux.HandleFunc("POST /_/api/restart", handleRestart(state))
 	mux.HandleFunc("POST /_/api/shutdown", handleShutdown(state))
 	mux.HandleFunc("GET /_/api/status", handleStatus(state))
@@ -886,7 +977,7 @@ func handleOpenFile(state *State) http.HandlerFunc {
 
 func handleAddPattern(state *State) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req addPatternRequest
+		var req patternRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -908,6 +999,29 @@ func handleAddPattern(state *State) http.HandlerFunc {
 		if err := json.NewEncoder(w).Encode(addPatternResponse{Matched: matched}); err != nil {
 			slog.Error("failed to encode response", "error", err)
 		}
+	}
+}
+
+func handleRemovePattern(state *State) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req patternRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		group, err := ResolveGroupName(req.Group)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if !state.RemovePattern(req.Pattern, group) {
+			http.Error(w, "pattern not found", http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -936,26 +1050,32 @@ func handleShutdown(state *State) http.HandlerFunc {
 	}
 }
 
+type statusGroup struct {
+	Group
+	Patterns []string `json:"patterns,omitempty"`
+}
+
 func handleStatus(state *State) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		patterns := state.Patterns()
-		patternStrs := make([]string, len(patterns))
-		for i, p := range patterns {
-			patternStrs[i] = p.Pattern
+		groups := state.Groups()
+		statusGroups := make([]statusGroup, len(groups))
+		for i, g := range groups {
+			statusGroups[i] = statusGroup{
+				Group:    g,
+				Patterns: state.PatternsForGroup(g.Name),
+			}
 		}
 
 		resp := struct {
-			Version  string   `json:"version"`
-			Revision string   `json:"revision"`
-			PID      int      `json:"pid"`
-			Groups   []Group  `json:"groups"`
-			Patterns []string `json:"patterns,omitempty"`
+			Version  string        `json:"version"`
+			Revision string        `json:"revision"`
+			PID      int           `json:"pid"`
+			Groups   []statusGroup `json:"groups"`
 		}{
 			Version:  version.Version,
 			Revision: version.Revision,
 			PID:      os.Getpid(),
-			Groups:   state.Groups(),
-			Patterns: patternStrs,
+			Groups:   statusGroups,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
