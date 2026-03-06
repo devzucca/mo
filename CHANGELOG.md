@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.15.0](https://github.com/k1LoW/mo/compare/v0.14.1...v0.15.0) - 2026-03-06
+### New Features 🎉
+- feat: add auto-backup and restore for sessions by @k1LoW in https://github.com/k1LoW/mo/pull/76
+
 ## [v0.14.1](https://github.com/k1LoW/mo/compare/v0.14.0...v0.14.1) - 2026-03-06
 ### Fix bug 🐛
 - fix: fix group dropdown not showing when no default group exists by @k1LoW in https://github.com/k1LoW/mo/pull/75
