@@ -941,7 +941,7 @@ func TestEnableBackup_FinalSaveOnCancel(t *testing.T) {
 	cancel()
 
 	// Wait for the backupLoop goroutine to finish its final save
-	time.Sleep(500 * time.Millisecond)
+	<-s.backupDone
 
 	mu.Lock()
 	count := len(saved)

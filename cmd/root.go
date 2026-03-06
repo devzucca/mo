@@ -306,7 +306,12 @@ func filterValidRestoreData(rd *server.RestoreData) (map[string][]string, map[st
 		}
 	}
 
-	return filesByGroup, rd.Patterns
+	patternsByGroup := make(map[string][]string)
+	for group, patterns := range rd.Patterns {
+		patternsByGroup[group] = patterns
+	}
+
+	return filesByGroup, patternsByGroup
 }
 
 func loadRestoreData(path string) (map[string][]string, map[string][]string, error) {

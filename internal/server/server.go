@@ -68,6 +68,7 @@ type State struct {
 
 	backupCh     chan struct{}       // dirty signal (buffered, size 1)
 	backupSaveFn func(RestoreData)  // backup write callback
+	backupDone   chan struct{}       // closed when backupLoop exits
 }
 
 func NewState(ctx context.Context) *State {
@@ -509,7 +510,9 @@ func (s *State) ExportState() (string, error) {
 func (s *State) EnableBackup(ctx context.Context, saveFn func(RestoreData)) {
 	s.backupCh = make(chan struct{}, 1)
 	s.backupSaveFn = saveFn
+	s.backupDone = make(chan struct{})
 	donegroup.Go(ctx, func() error {
+		defer close(s.backupDone)
 		s.backupLoop(ctx)
 		return nil
 	})
@@ -558,7 +561,12 @@ func (s *State) backupLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			timer.Stop()
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
 			s.saveBackup()
 			return
 		case _, ok := <-s.backupCh:
