@@ -424,13 +424,7 @@ func tryAddToExisting(addr string, files []string, patterns []string) bool {
 	added := len(files) + len(patterns)
 	slog.Info("added to existing server", "files", len(files), "patterns", len(patterns), "addr", addr)
 	fmt.Fprintf(os.Stderr, "mo: added %d item(s) to http://%s\n", added, addr)
-	if jsonOutput {
-		writeJSON(jsonServeOutput{
-			URL:   fmt.Sprintf("http://%s", addr),
-			Files: deeplinksToJSON(deeplinks),
-		})
-	}
-	printDeeplinks(deeplinks)
+	emitServeOutput(addr, deeplinks, false)
 
 	if isNewGroup || open {
 		openBrowser(addr)
@@ -623,7 +617,7 @@ func displayNames(paths []string) []string {
 }
 
 func printDeeplinks(entries []deeplinkEntry) {
-	if jsonOutput || len(entries) == 0 {
+	if len(entries) == 0 {
 		return
 	}
 	paths := make([]string, len(entries))
@@ -633,6 +627,22 @@ func printDeeplinks(entries []deeplinkEntry) {
 	names := displayNames(paths)
 	for i, e := range entries {
 		fmt.Printf("  %s  %s\n", e.URL, names[i])
+	}
+}
+
+// emitServeOutput writes the serve result (server URL + deeplinks) to stdout.
+// In JSON mode it emits a single JSON object; in text mode it prints the URL and deeplinks.
+func emitServeOutput(addr string, deeplinks []deeplinkEntry, printURL bool) {
+	if jsonOutput {
+		writeJSON(jsonServeOutput{
+			URL:   fmt.Sprintf("http://%s", addr),
+			Files: deeplinksToJSON(deeplinks),
+		})
+	} else {
+		if printURL {
+			fmt.Fprintf(os.Stdout, "http://%s\n", addr)
+		}
+		printDeeplinks(deeplinks)
 	}
 }
 
@@ -945,14 +955,6 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 		}
 	}
 
-	if jsonOutput {
-		writeJSON(jsonServeOutput{
-			URL:   fmt.Sprintf("http://%s", addr),
-			Files: deeplinksToJSON(deeplinks),
-		})
-	}
-	printDeeplinks(deeplinks)
-
 	for _, uf := range uploadedFiles {
 		state.AddUploadedFile(uf.Name, uf.Content, uf.Group)
 	}
@@ -969,6 +971,8 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 	if err != nil {
 		return fmt.Errorf("cannot listen on %s: %w", addr, err)
 	}
+
+	emitServeOutput(addr, deeplinks, false)
 
 	if err := donegroup.Cleanup(ctx, func() error {
 		state.CloseAllSubscribers()
@@ -1061,15 +1065,7 @@ func startBackground(addr string, filesByGroup map[string][]string, patternsByGr
 			}
 		}
 	}
-	if jsonOutput {
-		writeJSON(jsonServeOutput{
-			URL:   fmt.Sprintf("http://%s", addr),
-			Files: deeplinksToJSON(deeplinks),
-		})
-	} else {
-		fmt.Fprintf(os.Stdout, "http://%s\n", addr)
-		printDeeplinks(deeplinks)
-	}
+	emitServeOutput(addr, deeplinks, true)
 
 	openBrowser(addr)
 
