@@ -12,9 +12,9 @@ export function buildTree(files: FileEntry[]): TreeNode {
     return { name: "", fullPath: "", children: [], file: null };
   }
 
-  // Separate uploaded files (no path) from filesystem files
-  const fsFiles = files.filter((f) => f.path !== "");
-  const uploadedFiles = files.filter((f) => f.path === "");
+  // Separate uploaded files from filesystem files
+  const fsFiles = files.filter((f) => !f.uploaded);
+  const uploadedFiles = files.filter((f) => f.uploaded);
 
   if (fsFiles.length === 0) {
     // All files are uploaded — flat list at root

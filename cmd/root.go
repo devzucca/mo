@@ -302,7 +302,7 @@ func run(cmd *cobra.Command, args []string) error {
 	if foreground {
 		return startServer(cmd.Context(), addr, filesByGroup, patternsByGroup, uploadedFiles)
 	}
-	return startBackground(addr, filesByGroup, patternsByGroup)
+	return startBackground(addr, filesByGroup, patternsByGroup, uploadedFiles)
 }
 
 // mergeGroups merges base and additional group maps, with base entries first.
@@ -927,8 +927,8 @@ func spawnNewProcess(addr string, restoreFile string) (*os.Process, error) {
 	return cmd.Process, nil
 }
 
-func startBackground(addr string, filesByGroup map[string][]string, patternsByGroup map[string][]string) error {
-	restoreFile, err := server.WriteRestoreFile(server.RestoreData{Groups: filesByGroup, Patterns: patternsByGroup})
+func startBackground(addr string, filesByGroup map[string][]string, patternsByGroup map[string][]string, uploadedFiles []server.UploadedFileData) error {
+	restoreFile, err := server.WriteRestoreFile(server.RestoreData{Groups: filesByGroup, Patterns: patternsByGroup, UploadedFiles: uploadedFiles})
 	if err != nil {
 		return err
 	}

@@ -2,30 +2,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { addFile, uploadFile } from "./useApi";
 
 function extractFilePaths(dataTransfer: DataTransfer): string[] {
-  // Chrome/Edge: text/uri-list
-  const uriList = dataTransfer.getData("text/uri-list");
-  if (uriList) {
-    return uriList
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith("file://"))
-      .map((uri) => decodeURIComponent(new URL(uri).pathname));
+  // Try each data type that may contain file:// URIs
+  for (const type of ["text/uri-list", "text/x-moz-url"]) {
+    const data = dataTransfer.getData(type);
+    if (data) {
+      return data
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("file://"))
+        .map((uri) => decodeURIComponent(new URL(uri).pathname));
+    }
   }
-
-  // Firefox: text/x-moz-url (tab-separated URL\nTitle pairs)
-  const mozUrl = dataTransfer.getData("text/x-moz-url");
-  if (mozUrl) {
-    return mozUrl
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith("file://"))
-      .map((uri) => decodeURIComponent(new URL(uri).pathname));
-  }
-
   return [];
 }
 
 function isMarkdown(name: string): boolean {
   const lower = name.toLowerCase();
-  return lower.endsWith(".md") || lower.endsWith(".markdown");
+  return lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".mdx");
 }
 
 export function useFileDrop(activeGroup: string): { isDragging: boolean } {
@@ -64,21 +56,20 @@ export function useFileDrop(activeGroup: string): { isDragging: boolean } {
       const paths = extractFilePaths(e.dataTransfer);
       if (paths.length > 0) {
         const mdPaths = paths.filter(isMarkdown);
-        for (const p of mdPaths) {
-          addFile(p, activeGroup);
-        }
+        await Promise.all(mdPaths.map((p) => addFile(p, activeGroup).catch(() => {})));
         return;
       }
 
       // Pattern 2: File objects only (Chrome/Edge) - upload content
-      const files = e.dataTransfer.files;
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+      const fileList = e.dataTransfer.files;
+      const uploads: Promise<void>[] = [];
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
         if (isMarkdown(file.name)) {
-          const content = await file.text();
-          uploadFile(file.name, content, activeGroup);
+          uploads.push(file.text().then((content) => uploadFile(file.name, content, activeGroup)).catch(() => {}));
         }
       }
+      await Promise.all(uploads);
     },
     [activeGroup],
   );
