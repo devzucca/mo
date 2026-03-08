@@ -19,7 +19,12 @@
     },
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "eslint-plugin-react-hooks>eslint": ">=10"
+      }
+    }
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
