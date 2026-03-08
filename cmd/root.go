@@ -423,8 +423,8 @@ func tryAddToExisting(addr string, files []string, patterns []string) bool {
 
 	added := len(files) + len(patterns)
 	slog.Info("added to existing server", "files", len(files), "patterns", len(patterns), "addr", addr)
-	fmt.Fprintf(os.Stderr, "mo: added %d item(s) to http://%s\n", added, addr)
 	emitServeOutput(addr, deeplinks, false)
+	fmt.Fprintf(os.Stderr, "mo: added %d item(s) to http://%s\n", added, addr)
 
 	if isNewGroup || open {
 		openBrowser(addr)
@@ -974,7 +974,7 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 		return fmt.Errorf("cannot listen on %s: %w", addr, err)
 	}
 
-	emitServeOutput(addr, deeplinks, false)
+	emitServeOutput(addr, deeplinks, true)
 
 	if err := donegroup.Cleanup(ctx, func() error {
 		state.CloseAllSubscribers()
@@ -1054,8 +1054,6 @@ func startBackground(addr string, filesByGroup map[string][]string, patternsByGr
 		return fmt.Errorf("%w (pid %d)", err, pid)
 	}
 
-	fmt.Fprintf(os.Stderr, "mo: serving at http://%s (pid %d)\n", addr, pid)
-
 	var deeplinks []deeplinkEntry
 	if status != nil {
 		for _, g := range status.Groups {
@@ -1068,6 +1066,7 @@ func startBackground(addr string, filesByGroup map[string][]string, patternsByGr
 		}
 	}
 	emitServeOutput(addr, deeplinks, true)
+	fmt.Fprintf(os.Stderr, "mo: serving at http://%s (pid %d)\n", addr, pid)
 
 	openBrowser(addr)
 
