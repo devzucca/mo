@@ -104,19 +104,6 @@ describe("useScrollRestoration", () => {
       };
       sessionStorage.setItem(SCROLL_SESSION_KEY, JSON.stringify(ctx));
 
-      // Simulate fresh mount (no prior capture in this hook instance)
-      renderHook(
-        ({ sc, headingId, fileId }) => useScrollRestoration(sc, headingId, fileId),
-        { initialProps: { sc: container as HTMLElement | null, headingId: null as string | null, fileId: "file1" as string | null } },
-      );
-
-      // onContentRendered is stable, call it directly
-      act(() => {
-        // Access via the hook's return — re-render to get latest
-        // The hook is already rendered, just call onContentRendered
-      });
-
-      // Use a fresh renderHook to get the result
       const { result } = renderHook(
         ({ sc, headingId, fileId }) => useScrollRestoration(sc, headingId, fileId),
         { initialProps: { sc: container as HTMLElement | null, headingId: null as string | null, fileId: "file1" as string | null } },
