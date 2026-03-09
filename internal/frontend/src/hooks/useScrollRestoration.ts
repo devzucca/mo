@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 export const SCROLL_SESSION_KEY = "mo-scroll-context";
 
@@ -21,7 +21,9 @@ export function useScrollRestoration(
 
   // Single ref object for stable access in beforeunload and captureScrollPosition
   const latestRef = useRef({ scrollContainer, activeHeadingId, activeFileId });
-  latestRef.current = { scrollContainer, activeHeadingId, activeFileId };
+  useLayoutEffect(() => {
+    latestRef.current = { scrollContainer, activeHeadingId, activeFileId };
+  });
 
   const captureScrollPosition = useCallback(() => {
     const { scrollContainer: sc, activeFileId: fileId, activeHeadingId: headingId } = latestRef.current;
