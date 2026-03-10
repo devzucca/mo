@@ -24,6 +24,7 @@ import (
 	"github.com/k1LoW/mo/internal/logfile"
 	"github.com/k1LoW/mo/internal/server"
 	"github.com/k1LoW/mo/version"
+	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 )
@@ -174,7 +175,8 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	addr := fmt.Sprintf("%s:%d", bind, port)
+	bind = strings.Trim(bind, "[]")
+	addr := net.JoinHostPort(bind, strconv.Itoa(port))
 
 	if clearBackup {
 		if !backup.Exists(port) {
@@ -304,6 +306,31 @@ func run(cmd *cobra.Command, args []string) error {
 		uploadedFiles = restoredUploads
 	}
 
+	// Prompt only when actually starting a new server (not adding to existing one).
+	if !isLoopbackBind(bind) {
+		o := termenv.NewOutput(os.Stderr)
+		c := func(s string) termenv.Style { return o.String(s).Foreground(o.Color("208")) }
+		fmt.Fprintln(os.Stderr, c("SECURITY WARNING:").Bold(),
+			c(fmt.Sprintf("Binding to %s instead of localhost. mo has no authentication -- remote clients can:", bind)))
+		fmt.Fprintln(os.Stderr, c("  - Read any file accessible by this user"))
+		fmt.Fprintln(os.Stderr, c("  - Browse the filesystem via glob patterns"))
+		fmt.Fprintln(os.Stderr, c("  - Shut down or restart the server"))
+		fmt.Fprintf(os.Stderr, "Continue? [y/N] ")
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return err
+			}
+			fmt.Fprintln(os.Stderr, "mo: canceled")
+			return nil
+		}
+		ans := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		if ans != "y" && ans != "yes" {
+			fmt.Fprintln(os.Stderr, "mo: canceled")
+			return nil
+		}
+	}
+
 	if foreground {
 		return startServer(cmd.Context(), addr, filesByGroup, patternsByGroup, uploadedFiles)
 	}
@@ -368,6 +395,14 @@ func loadRestoreData(path string) (map[string][]string, map[string][]string, []s
 		return nil, nil, nil, err
 	}
 	return rd.Groups, rd.Patterns, rd.UploadedFiles, nil
+}
+
+func isLoopbackBind(bind string) bool {
+	if bind == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(bind)
+	return ip != nil && ip.IsLoopback()
 }
 
 func hasGlobChars(s string) bool {

@@ -495,3 +495,30 @@ func TestEmitServeOutput(t *testing.T) {
 		}
 	})
 }
+
+func TestIsLoopbackBind(t *testing.T) {
+	tests := []struct {
+		name string
+		bind string
+		want bool
+	}{
+		{"localhost", "localhost", true},
+		{"127.0.0.1", "127.0.0.1", true},
+		{"::1", "::1", true},
+		{"127.0.0.2", "127.0.0.2", true},
+		{"0.0.0.0", "0.0.0.0", false},
+		{"::", "::", false},
+		{"192.168.1.1", "192.168.1.1", false},
+		{"10.0.0.1", "10.0.0.1", false},
+		{"example.com", "example.com", false},
+		{"empty", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isLoopbackBind(tt.bind)
+			if got != tt.want {
+				t.Errorf("isLoopbackBind(%q) = %v, want %v", tt.bind, got, tt.want)
+			}
+		})
+	}
+}
