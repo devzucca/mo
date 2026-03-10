@@ -33,17 +33,8 @@ interface MarkdownViewerProps {
   onRemoveFile: () => void;
 }
 
-let mermaidInitialized = false;
-
 function getMermaidTheme(): "dark" | "default" {
   return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "default";
-}
-
-function ensureMermaidInit() {
-  if (!mermaidInitialized) {
-    mermaid.initialize({ startOnLoad: false, theme: getMermaidTheme() });
-    mermaidInitialized = true;
-  }
 }
 
 let mermaidCounter = 0;
@@ -92,7 +83,6 @@ export function MermaidBlock({ code }: { code: string }) {
 
     const doRender = () => {
       const width = containerRef.current?.offsetWidth;
-      ensureMermaidInit();
       mermaid.initialize({ startOnLoad: false, theme: getMermaidTheme() });
       renderMermaid(code, width)
         .then((renderedSvg) => {
