@@ -139,16 +139,16 @@ func isBinaryFile(path string) (bool, error) {
 
 func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 	// Check for duplicates before doing any I/O.
-	s.mu.Lock()
+	s.mu.RLock()
 	if g, ok := s.groups[groupName]; ok {
 		for _, f := range g.Files {
 			if f.Path == absPath {
-				s.mu.Unlock()
+				s.mu.RUnlock()
 				return f, nil
 			}
 		}
 	}
-	s.mu.Unlock()
+	s.mu.RUnlock()
 
 	bin, err := isBinaryFile(absPath)
 	if err != nil {

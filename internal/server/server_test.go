@@ -1082,9 +1082,12 @@ func TestAddFile_RejectsNonRegularFile(t *testing.T) {
 
 	dir := t.TempDir()
 
-	_, err := s.AddFile(dir, DefaultGroup)
+	entry, err := s.AddFile(dir, DefaultGroup)
 	if err == nil {
 		t.Fatal("expected error for non-regular (directory) path, got nil")
+	}
+	if entry != nil {
+		t.Fatalf("expected nil entry for non-regular (directory) path, got %#v", entry)
 	}
 }
 
