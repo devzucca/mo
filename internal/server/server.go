@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -123,13 +124,25 @@ func isBinaryFile(path string) (bool, error) {
 	if n == 0 {
 		return false, nil
 	}
-	if err != nil && err.Error() != "EOF" {
+	if err != nil && err != io.EOF {
 		return false, err
 	}
-	return bytes.ContainsRune(buf[:n], 0), nil
+	return bytes.IndexByte(buf[:n], 0) >= 0, nil
 }
 
 func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
+	// Check for duplicates before doing any I/O.
+	s.mu.Lock()
+	if g, ok := s.groups[groupName]; ok {
+		for _, f := range g.Files {
+			if f.Path == absPath {
+				s.mu.Unlock()
+				return f, nil
+			}
+		}
+	}
+	s.mu.Unlock()
+
 	bin, err := isBinaryFile(absPath)
 	if err != nil {
 		// If the file doesn't exist (yet), allow adding it.
@@ -149,6 +162,7 @@ func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 		s.groups[groupName] = g
 	}
 
+	// Re-check after re-acquiring the lock.
 	for _, f := range g.Files {
 		if f.Path == absPath {
 			return f, nil
