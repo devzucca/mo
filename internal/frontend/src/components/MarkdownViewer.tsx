@@ -496,12 +496,12 @@ export function MarkdownViewer({
   );
 
   const parsed = useMemo(
-    () => (isRawView ? null : parseFrontmatter(content)),
-    [content, isRawView],
+    () => (isMarkdown && !isRawView ? parseFrontmatter(content) : null),
+    [content, isRawView, isMarkdown],
   );
 
-  const isMarkdown = useMemo(() => isMarkdownFile(fileName), [fileName]);
-  const codeLanguage = useMemo(() => (isMarkdown ? null : detectLanguage(fileName)), [fileName, isMarkdown]);
+  const isMarkdown = isMarkdownFile(fileName);
+  const codeLanguage = isMarkdown ? null : detectLanguage(fileName);
 
   const renderedContent = useMemo(() => {
     if (!isMarkdown) {
