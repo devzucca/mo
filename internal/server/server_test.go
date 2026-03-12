@@ -31,11 +31,13 @@ func newTestState(t *testing.T) *State {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	s := &State{
-		groups:      make(map[string]*Group),
-		subscribers: make(map[chan sseEvent]struct{}),
-		restartCh:   make(chan string, 1),
-		shutdownCh:  make(chan struct{}, 1),
-		watchedDirs: make(map[string]int),
+		groups:             make(map[string]*Group),
+		subscribers:        make(map[chan sseEvent]struct{}),
+		restartCh:          make(chan string, 1),
+		shutdownCh:         make(chan struct{}, 1),
+		watchedDirs:        make(map[string]int),
+		fileChangeDebounce: defaultFileChangeDebounce,
+		fileChangeTimers:   make(map[string]*time.Timer),
 	}
 	_ = ctx
 	return s
@@ -474,8 +476,8 @@ func TestHandleReorderFiles(t *testing.T) {
 
 func TestAddPattern_InitialExpansion(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o600) //nolint:errcheck
-	os.WriteFile(filepath.Join(dir, "b.md"), []byte("# B"), 0o600) //nolint:errcheck
+	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0o600)   //nolint:errcheck
+	os.WriteFile(filepath.Join(dir, "b.md"), []byte("# B"), 0o600)   //nolint:errcheck
 	os.WriteFile(filepath.Join(dir, "c.txt"), []byte("text"), 0o600) //nolint:errcheck
 
 	s := newTestState(t)
@@ -879,6 +881,45 @@ func TestHandleSSE_StartedEvent(t *testing.T) {
 	wantData := fmt.Sprintf(`data: {"pid":%d}`, os.Getpid())
 	if dataLine != wantData {
 		t.Fatalf("got data line %q, want %q", dataLine, wantData)
+	}
+}
+
+func TestScheduleFileChanged_DebouncesDuplicateEvents(t *testing.T) {
+	s := newTestState(t)
+	s.fileChangeDebounce = 20 * time.Millisecond
+
+	tmpFile := filepath.Join(t.TempDir(), "debounce.md")
+	s.groups[DefaultGroup] = &Group{
+		Name:  DefaultGroup,
+		Files: []*FileEntry{{ID: FileID(tmpFile), Name: "debounce.md", Path: tmpFile}},
+	}
+
+	ch := s.Subscribe()
+	defer s.Unsubscribe(ch)
+
+	s.scheduleFileChanged(tmpFile)
+	s.scheduleFileChanged(tmpFile)
+	s.scheduleFileChanged(tmpFile)
+
+	var changedEvents int
+	deadline := time.After(300 * time.Millisecond)
+	for changedEvents < 1 {
+		select {
+		case e := <-ch:
+			if e.Name == eventFileChanged {
+				changedEvents++
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for debounced file-changed event")
+		}
+	}
+
+	select {
+	case e := <-ch:
+		if e.Name == eventFileChanged {
+			t.Fatal("received duplicate file-changed event after debounce window")
+		}
+	case <-time.After(80 * time.Millisecond):
 	}
 }
 

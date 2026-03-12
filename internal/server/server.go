@@ -78,10 +78,15 @@ type State struct {
 	patterns    []*GlobPattern
 	watchedDirs map[string]int // directory → reference count
 
+	fileChangeDebounce time.Duration
+	fileChangeTimers   map[string]*time.Timer
+
 	backupCh     chan struct{}     // dirty signal (buffered, size 1)
 	backupSaveFn func(RestoreData) // backup write callback
 	backupDone   chan struct{}     // closed when backupLoop exits
 }
+
+const defaultFileChangeDebounce = 200 * time.Millisecond
 
 func NewState(ctx context.Context) *State {
 	w, err := fsnotify.NewWatcher()
@@ -90,12 +95,14 @@ func NewState(ctx context.Context) *State {
 	}
 
 	s := &State{
-		groups:      make(map[string]*Group),
-		subscribers: make(map[chan sseEvent]struct{}),
-		watcher:     w,
-		restartCh:   make(chan string, 1),
-		shutdownCh:  make(chan struct{}, 1),
-		watchedDirs: make(map[string]int),
+		groups:             make(map[string]*Group),
+		subscribers:        make(map[chan sseEvent]struct{}),
+		watcher:            w,
+		restartCh:          make(chan string, 1),
+		shutdownCh:         make(chan struct{}, 1),
+		watchedDirs:        make(map[string]int),
+		fileChangeDebounce: defaultFileChangeDebounce,
+		fileChangeTimers:   make(map[string]*time.Timer),
 	}
 
 	if w != nil {
@@ -457,6 +464,10 @@ func (s *State) CloseAllSubscribers() {
 	if s.watcher != nil {
 		s.watcher.Close()
 	}
+	for path, timer := range s.fileChangeTimers {
+		timer.Stop()
+		delete(s.fileChangeTimers, path)
+	}
 }
 
 // RestartCh returns a channel that receives the restore file path when a restart is requested.
@@ -784,7 +795,7 @@ func (s *State) watchLoop() {
 			if len(ids) > 0 {
 				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
 					slog.Info("file changed", "path", event.Name)
-					s.notifyFileChanged(ids)
+					s.scheduleFileChanged(event.Name)
 				}
 				// Editors using atomic save (write-to-temp + rename) cause
 				// the original inode to disappear, which removes the watch.
@@ -799,7 +810,7 @@ func (s *State) watchLoop() {
 							}
 						} else {
 							slog.Info("re-watching file", "path", event.Name)
-							s.notifyFileChanged(ids)
+							s.scheduleFileChanged(event.Name)
 						}
 					})
 				}
@@ -817,6 +828,41 @@ func (s *State) watchLoop() {
 			slog.Warn("file watcher error", "error", err)
 		}
 	}
+}
+
+func (s *State) scheduleFileChanged(absPath string) {
+	if s.fileChangeDebounce <= 0 {
+		s.notifyFileChangedByPath(absPath)
+		return
+	}
+
+	s.mu.Lock()
+	if timer, ok := s.fileChangeTimers[absPath]; ok {
+		timer.Stop()
+	}
+	debounce := s.fileChangeDebounce
+	var timer *time.Timer
+	timer = time.AfterFunc(debounce, func() {
+		s.mu.Lock()
+		current, ok := s.fileChangeTimers[absPath]
+		if ok && current == timer {
+			delete(s.fileChangeTimers, absPath)
+		}
+		s.mu.Unlock()
+		if ok && current == timer {
+			s.notifyFileChangedByPath(absPath)
+		}
+	})
+	s.fileChangeTimers[absPath] = timer
+	s.mu.Unlock()
+}
+
+func (s *State) notifyFileChangedByPath(absPath string) {
+	ids := s.findIDsByPath(absPath)
+	if len(ids) == 0 {
+		return
+	}
+	s.notifyFileChanged(ids)
 }
 
 func (s *State) notifyFileChanged(ids []string) {
