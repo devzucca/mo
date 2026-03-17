@@ -163,16 +163,15 @@ export function App() {
     }
   }, [initialFileId]);
 
-  const activeFileName = useMemo(
-    () =>
-      groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === activeFileId)?.name ??
-      "",
+  const activeFile = useMemo(
+    () => groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === activeFileId),
     [groups, activeGroup, activeFileId],
   );
+  const activeFileName = activeFile?.name ?? "";
 
   useEffect(() => {
-    document.title = activeFileName || "mo";
-  }, [activeFileName]);
+    document.title = activeFile?.title || activeFileName || "mo";
+  }, [activeFile?.title, activeFileName]);
 
   // Auto-close ToC panel when switching to a non-markdown file
   useEffect(() => {

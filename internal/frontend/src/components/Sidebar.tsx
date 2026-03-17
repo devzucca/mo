@@ -73,7 +73,7 @@ function FileItem({
         title={file.uploaded ? file.name : file.path}
       >
         <FileIcon uploaded={file.uploaded} />
-        <span className="overflow-hidden text-ellipsis whitespace-nowrap pr-6">{file.name}</span>
+        <span className="overflow-hidden text-ellipsis whitespace-nowrap pr-6">{file.title || file.name}</span>
       </button>
       <FileContextMenu
         file={file}
@@ -140,7 +140,9 @@ export function Sidebar({
   const files = useMemo(() => {
     if (!searchQuery) return allFiles;
     const q = searchQuery.toLowerCase();
-    return allFiles.filter((f) => f.name.toLowerCase().includes(q));
+    return allFiles.filter(
+      (f) => f.name.toLowerCase().includes(q) || (f.title && f.title.toLowerCase().includes(q)),
+    );
   }, [allFiles, searchQuery]);
 
   useEffect(() => {

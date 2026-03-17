@@ -1540,3 +1540,178 @@ func TestDirMove(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+func TestExtractTitle(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{"h1", "# Hello World", "Hello World"},
+		{"h2", "## Second Level", "Second Level"},
+		{"h3", "### Third Level", "Third Level"},
+		{"with leading blank lines", "\n\n# Title After Blanks", "Title After Blanks"},
+		{"with frontmatter-like content", "---\ntitle: foo\n---\n# Real Title", "Real Title"},
+		{"no heading", "Just some text\nwithout headings", ""},
+		{"empty", "", ""},
+		{"heading with extra spaces", "#   Spaced Out   ", "Spaced Out"},
+		{"bare hash", "#", ""},
+		{"bare hashes", "###", ""},
+		{"only first heading", "# First\n# Second", "First"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractTitle(tt.content)
+			if got != tt.want {
+				t.Errorf("extractTitle() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractTitleFromFile(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("reads title from file", func(t *testing.T) {
+		f := filepath.Join(dir, "with-title.md")
+		os.WriteFile(f, []byte("# File Title\nSome content"), 0o600) //nolint:errcheck
+		if got := extractTitleFromFile(f); got != "File Title" {
+			t.Errorf("got %q, want %q", got, "File Title")
+		}
+	})
+
+	t.Run("returns empty for file without heading", func(t *testing.T) {
+		f := filepath.Join(dir, "no-title.md")
+		os.WriteFile(f, []byte("No heading here"), 0o600) //nolint:errcheck
+		if got := extractTitleFromFile(f); got != "" {
+			t.Errorf("got %q, want empty", got)
+		}
+	})
+
+	t.Run("returns empty for nonexistent file", func(t *testing.T) {
+		if got := extractTitleFromFile(filepath.Join(dir, "nope.md")); got != "" {
+			t.Errorf("got %q, want empty", got)
+		}
+	})
+}
+
+func TestAddFile_WithUseHeadingTitle(t *testing.T) {
+	s := newTestState(t)
+	s.SetUseHeadingTitle(true)
+
+	dir := t.TempDir()
+	f := filepath.Join(dir, "doc.md")
+	os.WriteFile(f, []byte("# My Document\nContent here"), 0o600) //nolint:errcheck
+
+	entry, err := s.AddFile(f, DefaultGroup)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Title != "My Document" {
+		t.Errorf("Title = %q, want %q", entry.Title, "My Document")
+	}
+}
+
+func TestAddFile_WithoutUseHeadingTitle(t *testing.T) {
+	s := newTestState(t)
+	// useHeadingTitle is false by default
+
+	dir := t.TempDir()
+	f := filepath.Join(dir, "doc.md")
+	os.WriteFile(f, []byte("# My Document\nContent here"), 0o600) //nolint:errcheck
+
+	entry, err := s.AddFile(f, DefaultGroup)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Title != "" {
+		t.Errorf("Title = %q, want empty (feature disabled)", entry.Title)
+	}
+}
+
+func TestAddUploadedFile_WithUseHeadingTitle(t *testing.T) {
+	s := newTestState(t)
+	s.SetUseHeadingTitle(true)
+
+	entry := s.AddUploadedFile("note.md", "## Uploaded Note\nBody", DefaultGroup)
+	if entry.Title != "Uploaded Note" {
+		t.Errorf("Title = %q, want %q", entry.Title, "Uploaded Note")
+	}
+}
+
+func TestAddUploadedFile_WithoutUseHeadingTitle(t *testing.T) {
+	s := newTestState(t)
+
+	entry := s.AddUploadedFile("note.md", "## Uploaded Note\nBody", DefaultGroup)
+	if entry.Title != "" {
+		t.Errorf("Title = %q, want empty (feature disabled)", entry.Title)
+	}
+}
+
+func TestUpdateTitleByPath(t *testing.T) {
+	s := newTestState(t)
+	s.SetUseHeadingTitle(true)
+
+	dir := t.TempDir()
+	f := filepath.Join(dir, "evolving.md")
+	os.WriteFile(f, []byte("# Original Title"), 0o600) //nolint:errcheck
+
+	entry, err := s.AddFile(f, DefaultGroup)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Title != "Original Title" {
+		t.Fatalf("initial Title = %q, want %q", entry.Title, "Original Title")
+	}
+
+	// Update file content
+	os.WriteFile(f, []byte("# Updated Title"), 0o600) //nolint:errcheck
+
+	changed := s.UpdateTitleByPath(f)
+	if !changed {
+		t.Fatal("expected UpdateTitleByPath to return true")
+	}
+	if entry.Title != "Updated Title" {
+		t.Errorf("Title = %q, want %q", entry.Title, "Updated Title")
+	}
+
+	// Same content again — no change
+	changed = s.UpdateTitleByPath(f)
+	if changed {
+		t.Error("expected UpdateTitleByPath to return false (no change)")
+	}
+}
+
+func TestHandleGroups_IncludesTitle(t *testing.T) {
+	s := newTestState(t)
+	s.SetUseHeadingTitle(true)
+
+	dir := t.TempDir()
+	f := filepath.Join(dir, "titled.md")
+	os.WriteFile(f, []byte("# API Reference\nEndpoints..."), 0o600) //nolint:errcheck
+
+	_, err := s.AddFile(f, DefaultGroup)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	handler := NewHandler(s)
+	req := httptest.NewRequest("GET", "/_/api/groups", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var groups []Group
+	if err := json.NewDecoder(rec.Body).Decode(&groups); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(groups) != 1 || len(groups[0].Files) != 1 {
+		t.Fatalf("expected 1 group with 1 file, got %d groups", len(groups))
+	}
+	if groups[0].Files[0].Title != "API Reference" {
+		t.Errorf("Title in API response = %q, want %q", groups[0].Files[0].Title, "API Reference")
+	}
+}

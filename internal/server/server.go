@@ -29,8 +29,40 @@ type FileEntry struct {
 	Name     string `json:"name"`
 	ID       string `json:"id"`
 	Path     string `json:"path"`
+	Title    string `json:"title,omitempty"`
 	Uploaded bool   `json:"uploaded,omitempty"`
 	content  string // in-memory content for uploaded files
+}
+
+// extractTitle returns the text of the first Markdown heading (ATX-style)
+// found in content, or "" if none is found.
+func extractTitle(content string) string {
+	for line := range strings.SplitSeq(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
+			title := strings.TrimLeft(trimmed, "#")
+			title = strings.TrimSpace(title)
+			if title != "" {
+				return title
+			}
+		}
+	}
+	return ""
+}
+
+// extractTitleFromFile reads the first 8KB of the file and extracts the title.
+func extractTitleFromFile(path string) string {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	var buf [8192]byte
+	n, err := f.Read(buf[:])
+	if err != nil && !errors.Is(err, io.EOF) {
+		return ""
+	}
+	return extractTitle(string(buf[:n]))
 }
 
 // FileID generates a deterministic file ID from an absolute path.
@@ -85,6 +117,8 @@ type State struct {
 	backupCh     chan struct{}     // dirty signal (buffered, size 1)
 	backupSaveFn func(RestoreData) // backup write callback
 	backupDone   chan struct{}     // closed when backupLoop exits
+
+	useHeadingTitle bool // when true, extract first heading as title
 }
 
 const defaultFileChangeDebounce = 200 * time.Millisecond
@@ -114,6 +148,13 @@ func NewState(ctx context.Context) *State {
 	}
 
 	return s
+}
+
+// SetUseHeadingTitle enables or disables extracting the first Markdown
+// heading as the file title. When enabled, AddFile and AddUploadedFile
+// populate the Title field, and file-change events update it.
+func (s *State) SetUseHeadingTitle(v bool) {
+	s.useHeadingTitle = v
 }
 
 // ErrBinaryFile is returned when a file is detected as binary.
@@ -168,6 +209,12 @@ func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 		return nil, fmt.Errorf("%s: %w", absPath, ErrBinaryFile)
 	}
 
+	// Extract title outside the lock to avoid I/O under mutex.
+	var title string
+	if s.useHeadingTitle {
+		title = extractTitleFromFile(absPath)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -185,9 +232,10 @@ func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 	}
 
 	entry := &FileEntry{
-		Name: filepath.Base(absPath),
-		ID:   FileID(absPath),
-		Path: absPath,
+		Name:  filepath.Base(absPath),
+		ID:    FileID(absPath),
+		Path:  absPath,
+		Title: title,
 	}
 	g.Files = append(g.Files, entry)
 
@@ -227,9 +275,15 @@ func (s *State) AddUploadedFile(name, content, groupName string) *FileEntry {
 		s.groups[groupName] = g
 	}
 
+	var title string
+	if s.useHeadingTitle {
+		title = extractTitle(content)
+	}
+
 	entry := &FileEntry{
 		Name:     name,
 		ID:       id,
+		Title:    title,
 		Uploaded: true,
 		content:  content,
 	}
@@ -264,6 +318,25 @@ func (s *State) FindFile(id string) *FileEntry {
 		}
 	}
 	return nil
+}
+
+// UpdateTitleByPath re-extracts titles for all entries matching absPath.
+// File I/O happens outside the mutex lock. Returns true if any title changed.
+func (s *State) UpdateTitleByPath(absPath string) bool {
+	newTitle := extractTitleFromFile(absPath)
+
+	changed := false
+	s.mu.Lock()
+	for _, g := range s.groups {
+		for _, entry := range g.Files {
+			if entry.Path == absPath && entry.Title != newTitle {
+				entry.Title = newTitle
+				changed = true
+			}
+		}
+	}
+	s.mu.Unlock()
+	return changed
 }
 
 // FindGroupForFile returns the group name for a given file ID.
@@ -864,6 +937,11 @@ func (s *State) notifyFileChangedByPath(absPath string) {
 	ids := s.findIDsByPath(absPath)
 	if len(ids) == 0 {
 		return
+	}
+	if s.useHeadingTitle {
+		if s.UpdateTitleByPath(absPath) {
+			s.sendEvent(sseEvent{Name: eventUpdate, Data: "{}"})
+		}
 	}
 	s.notifyFileChanged(ids)
 }
