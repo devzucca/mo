@@ -45,6 +45,7 @@ interface FileItemProps {
   onFileSelect: (id: string) => void;
   onMenuToggle: (id: string) => void;
   onOpenInNewTab: (id: string) => void;
+  onCopyPath: (path: string) => void;
   onMoveToGroup: (id: string, group: string) => void;
   onRemove: (id: string) => void;
   menuRef: React.RefObject<HTMLDivElement | null>;
@@ -59,6 +60,7 @@ function FileItem({
   onFileSelect,
   onMenuToggle,
   onOpenInNewTab,
+  onCopyPath,
   onMoveToGroup,
   onRemove,
   menuRef,
@@ -85,6 +87,7 @@ function FileItem({
         otherGroups={otherGroups}
         onToggle={onMenuToggle}
         onOpenInNewTab={onOpenInNewTab}
+        onCopyPath={onCopyPath}
         onMoveToGroup={onMoveToGroup}
         onRemove={onRemove}
         menuRef={menuRef}
@@ -256,6 +259,11 @@ export function Sidebar({
     }
   }, []);
 
+  const handleCopyPath = useCallback((path: string) => {
+    setMenuOpenId(null);
+    navigator.clipboard.writeText(path).catch(() => {});
+  }, []);
+
   const handleRemove = useCallback((id: string) => {
     setMenuOpenId(null);
     removeFile(id);
@@ -297,6 +305,7 @@ export function Sidebar({
             onFileSelect={onFileSelect}
             onMenuToggle={handleMenuToggle}
             onOpenInNewTab={handleOpenInNewTab}
+            onCopyPath={handleCopyPath}
             onMoveToGroup={handleMoveToGroup}
             onRemove={handleRemove}
             menuRef={menuRef}
@@ -313,6 +322,7 @@ export function Sidebar({
               onFileSelect={onFileSelect}
               onMenuToggle={handleMenuToggle}
               onOpenInNewTab={handleOpenInNewTab}
+              onCopyPath={handleCopyPath}
               onMoveToGroup={handleMoveToGroup}
               onRemove={handleRemove}
               menuRef={menuRef}
@@ -336,6 +346,7 @@ export function Sidebar({
                   onFileSelect={onFileSelect}
                   onMenuToggle={handleMenuToggle}
                   onOpenInNewTab={handleOpenInNewTab}
+                  onCopyPath={handleCopyPath}
                   onMoveToGroup={handleMoveToGroup}
                   onRemove={handleRemove}
                   menuRef={menuRef}

@@ -29,6 +29,7 @@ interface TreeViewProps {
   onFileSelect: (id: string) => void;
   onMenuToggle: (id: string) => void;
   onOpenInNewTab: (id: string) => void;
+  onCopyPath: (path: string) => void;
   onMoveToGroup: (id: string, group: string) => void;
   onRemove: (id: string) => void;
   menuRef: React.RefObject<HTMLDivElement | null>;
@@ -44,6 +45,7 @@ export function TreeView({
   onFileSelect,
   onMenuToggle,
   onOpenInNewTab,
+  onCopyPath,
   onMoveToGroup,
   onRemove,
   menuRef,
@@ -96,6 +98,7 @@ export function TreeView({
           onFileSelect={onFileSelect}
           onMenuToggle={onMenuToggle}
           onOpenInNewTab={onOpenInNewTab}
+          onCopyPath={onCopyPath}
           onMoveToGroup={onMoveToGroup}
           onRemove={onRemove}
           menuRef={menuRef}
@@ -117,6 +120,7 @@ interface TreeNodeItemProps {
   onFileSelect: (id: string) => void;
   onMenuToggle: (id: string) => void;
   onOpenInNewTab: (id: string) => void;
+  onCopyPath: (path: string) => void;
   onMoveToGroup: (id: string, group: string) => void;
   onRemove: (id: string) => void;
   menuRef: React.RefObject<HTMLDivElement | null>;
@@ -134,6 +138,7 @@ function TreeNodeItem({
   onFileSelect,
   onMenuToggle,
   onOpenInNewTab,
+  onCopyPath,
   onMoveToGroup,
   onRemove,
   menuRef,
@@ -153,6 +158,7 @@ function TreeNodeItem({
         onFileSelect={onFileSelect}
         onMenuToggle={onMenuToggle}
         onOpenInNewTab={onOpenInNewTab}
+        onCopyPath={onCopyPath}
         onMoveToGroup={onMoveToGroup}
         onRemove={onRemove}
         menuRef={menuRef}
@@ -200,6 +206,7 @@ function TreeNodeItem({
             onFileSelect={onFileSelect}
             onMenuToggle={onMenuToggle}
             onOpenInNewTab={onOpenInNewTab}
+            onCopyPath={onCopyPath}
             onMoveToGroup={onMoveToGroup}
             onRemove={onRemove}
             menuRef={menuRef}
@@ -222,6 +229,7 @@ interface FileNodeItemProps {
   onFileSelect: (id: string) => void;
   onMenuToggle: (id: string) => void;
   onOpenInNewTab: (id: string) => void;
+  onCopyPath: (path: string) => void;
   onMoveToGroup: (id: string, group: string) => void;
   onRemove: (id: string) => void;
   menuRef: React.RefObject<HTMLDivElement | null>;
@@ -238,6 +246,7 @@ function FileNodeItem({
   onFileSelect,
   onMenuToggle,
   onOpenInNewTab,
+  onCopyPath,
   onMoveToGroup,
   onRemove,
   menuRef,
@@ -267,6 +276,7 @@ function FileNodeItem({
         otherGroups={otherGroups}
         onToggle={onMenuToggle}
         onOpenInNewTab={onOpenInNewTab}
+        onCopyPath={onCopyPath}
         onMoveToGroup={onMoveToGroup}
         onRemove={onRemove}
         menuRef={menuRef}
