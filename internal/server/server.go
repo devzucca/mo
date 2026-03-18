@@ -36,6 +36,23 @@ type FileEntry struct {
 
 const headFileSizeLimit = 8192
 
+// leadingColumns counts the indentation of line in columns, expanding tabs to
+// the next 4-column tab stop (CommonMark §2.1).
+func leadingColumns(line string) int {
+	col := 0
+	for _, c := range line {
+		switch c {
+		case ' ':
+			col++
+		case '\t':
+			col = (col/4 + 1) * 4
+		default:
+			return col
+		}
+	}
+	return col
+}
+
 // extractTitle returns the text of the first Markdown heading (ATX-style)
 // found in content, or "" if none is found.
 func extractTitle(content string) string {
@@ -45,13 +62,9 @@ func extractTitle(content string) string {
 	fenceChar := byte(0)
 	fenceLen := 0
 	for line := range strings.SplitSeq(content, "\n") {
-		// CommonMark: a leading tab equals 4 columns at column 0 — indented code block.
-		if len(line) > 0 && line[0] == '\t' {
-			continue
-		}
-		// CommonMark: 4+ leading spaces = indented code block.
-		indent := len(line) - len(strings.TrimLeft(line, " "))
-		if indent >= 4 {
+		// CommonMark §4.6: lines with 4+ columns of leading indentation (spaces or tabs)
+		// are indented code blocks and must not be parsed as headings.
+		if leadingColumns(line) >= 4 {
 			continue
 		}
 		trimmed := strings.TrimSpace(line)
