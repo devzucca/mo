@@ -529,7 +529,13 @@ export function MarkdownViewer({
         {parsed && <FrontmatterBlock yaml={parsed.yaml} />}
         <Markdown
           remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeGithubAlerts, rehypeSlug, rehypeKatex]}
+          rehypePlugins={[
+            rehypeRaw,
+            [rehypeSanitize, sanitizeSchema],
+            rehypeGithubAlerts,
+            rehypeSlug,
+            rehypeKatex,
+          ]}
           components={components}
         >
           {md}
