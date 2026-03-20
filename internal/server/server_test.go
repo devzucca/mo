@@ -1756,3 +1756,56 @@ func TestCSPHeader(t *testing.T) {
 		}
 	}
 }
+
+func TestFindGroupForFile(t *testing.T) {
+	idA := testIDa
+	idB := testIDb
+
+	t.Run("returns group name for existing file", func(t *testing.T) {
+		s := newTestState(t)
+		s.groups["docs"] = &Group{
+			Name:  "docs",
+			Files: []*FileEntry{{ID: idA, Name: "a.md", Path: "/a.md"}},
+		}
+		s.groups["notes"] = &Group{
+			Name:  "notes",
+			Files: []*FileEntry{{ID: idB, Name: "b.md", Path: "/b.md"}},
+		}
+
+		got := s.FindGroupForFile(idB)
+		if got != "notes" {
+			t.Errorf("FindGroupForFile(%q) = %q, want %q", idB, got, "notes")
+		}
+	})
+
+	t.Run("returns empty string for unknown file", func(t *testing.T) {
+		s := newTestState(t)
+		s.groups["docs"] = &Group{
+			Name:  "docs",
+			Files: []*FileEntry{{ID: idA, Name: "a.md", Path: "/a.md"}},
+		}
+
+		got := s.FindGroupForFile("nonexistent")
+		if got != "" {
+			t.Errorf("FindGroupForFile(nonexistent) = %q, want empty", got)
+		}
+	})
+}
+
+func TestRemoveFileNotFound(t *testing.T) {
+	s := newTestState(t)
+	s.groups[DefaultGroup] = &Group{
+		Name:  DefaultGroup,
+		Files: []*FileEntry{{ID: testIDa, Name: "a.md", Path: "/a.md"}},
+	}
+
+	ok := s.RemoveFile("nonexistent-id")
+	if ok {
+		t.Error("RemoveFile returned true for nonexistent file ID")
+	}
+
+	// Verify original file is still there
+	if len(s.groups[DefaultGroup].Files) != 1 {
+		t.Error("expected files to be unchanged")
+	}
+}

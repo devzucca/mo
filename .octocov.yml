@@ -15,6 +15,7 @@ codeToTestRatio:
     - '**/*_test.go'
     - 'internal/frontend/src/**/*.test.ts'
     - 'internal/frontend/src/**/*.test.tsx'
+    - '!internal/frontend/node_modules/**'
 testExecutionTime:
   if: true
 diff:
