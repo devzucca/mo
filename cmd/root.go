@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/k1LoW/errors"
+
 	"github.com/k1LoW/donegroup"
 	"github.com/k1LoW/mo/internal/backup"
 	"github.com/k1LoW/mo/internal/logfile"
@@ -258,7 +260,15 @@ func run(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("invalid target group name %q: %w", target, err)
 		}
 
-		return doClose(addr, args, resolvedTarget)
+		closedPaths, err := doClose(addr, args, resolvedTarget)
+		if len(closedPaths) > 0 {
+			names := displayNames(closedPaths)
+			for _, name := range names {
+				fmt.Printf("  %s\n", name)
+			}
+			fmt.Fprintf(os.Stderr, "mo: closed %d file(s) from http://%s\n", len(closedPaths), addr)
+		}
+		return err
 	}
 
 	if restore != "" {
@@ -835,21 +845,21 @@ func doUnwatch(addr string, patterns []string, groupName string) error {
 	return nil
 }
 
-func doClose(addr string, paths []string, groupName string) error {
+func doClose(addr string, paths []string, groupName string) ([]string, error) {
 	result, err := probeServer(addr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	resp, err := result.client.Get(fmt.Sprintf("http://%s/_/api/status", addr))
 	if err != nil {
-		return fmt.Errorf("failed to get server status: %w", err)
+		return nil, fmt.Errorf("failed to get server status: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var status statusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return fmt.Errorf("failed to decode status: %w", err)
+		return nil, fmt.Errorf("failed to decode status: %w", err)
 	}
 
 	pathToID := make(map[string]string)
@@ -863,47 +873,48 @@ func doClose(addr string, paths []string, groupName string) error {
 	}
 
 	var closedPaths []string
+	var joinedErr error
 	for _, p := range paths {
 		absPath, err := filepath.Abs(p)
 		if err != nil {
-			return fmt.Errorf("cannot resolve path %s: %w", p, err)
+			joinedErr = errors.Join(joinedErr, fmt.Errorf("cannot resolve path %s: %w", p, err))
+			continue
 		}
 
 		id, ok := pathToID[absPath]
 		if !ok {
-			return fmt.Errorf("file %q not found in group %q (use --status to see files)", absPath, groupName)
+			joinedErr = errors.Join(joinedErr, fmt.Errorf("file %q not found in group %q (use --status to see files)", absPath, groupName))
+			continue
 		}
 
 		req, err := http.NewRequest(http.MethodDelete,
 			fmt.Sprintf("http://%s/_/api/files/%s", addr, id), nil)
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			joinedErr = errors.Join(joinedErr, fmt.Errorf("failed to create request for %q: %w", absPath, err))
+			continue
 		}
 
 		closeResp, err := result.client.Do(req)
 		if err != nil {
-			return fmt.Errorf("failed to send close request: %w", err)
+			joinedErr = errors.Join(joinedErr, fmt.Errorf("failed to close %q: %w", absPath, err))
+			continue
 		}
 		closeResp.Body.Close()
 
 		if closeResp.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("file %q not found", absPath)
+			joinedErr = errors.Join(joinedErr, fmt.Errorf("file %q not found", absPath))
+			continue
 		}
 		if closeResp.StatusCode != http.StatusNoContent {
-			return fmt.Errorf("unexpected response from server: %s", closeResp.Status)
+			joinedErr = errors.Join(joinedErr, fmt.Errorf("unexpected response for %q: %s", absPath, closeResp.Status))
+			continue
 		}
 
 		slog.Info("file closed", "path", absPath, "id", id, "group", groupName)
 		closedPaths = append(closedPaths, absPath)
 	}
 
-	names := displayNames(closedPaths)
-	for _, name := range names {
-		fmt.Printf("  %s\n", name)
-	}
-	fmt.Fprintf(os.Stderr, "mo: closed %d file(s) from http://%s\n", len(closedPaths), addr)
-
-	return nil
+	return closedPaths, joinedErr
 }
 
 type statusResponse struct {
