@@ -454,6 +454,7 @@ export function App() {
                 onZoom={handleZoom}
                 scrollToHeading={pendingSearchHeading}
                 onScrolledToHeading={() => setPendingSearchHeading(null)}
+                searchQuery={searchQuery}
               />
             ) : (
               <div className="flex items-center justify-center h-50 text-gh-text-secondary text-sm">
