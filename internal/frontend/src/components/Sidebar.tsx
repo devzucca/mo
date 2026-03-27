@@ -17,6 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { FileEntry, Group, SearchResult } from "../hooks/useApi";
 import { removeFile, moveFile } from "../hooks/useApi";
 import { buildFileUrl } from "../utils/groups";
+import { escapeRegExp } from "../utils/regex";
 import type { ViewMode } from "./ViewModeToggle";
 import { TreeView } from "./TreeView";
 import { FileContextMenu } from "./FileContextMenu";
@@ -34,10 +35,6 @@ function getInitialWidth(): number {
     if (n >= MIN_WIDTH && n <= MAX_WIDTH) return n;
   }
   return DEFAULT_WIDTH;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function renderHighlightedText(text: string, query: string) {

@@ -11,6 +11,7 @@ import "katex/dist/katex.min.css";
 import { codeToHtml } from "shiki";
 import mermaid from "mermaid";
 import { fetchFileContent, openRelativeFile } from "../hooks/useApi";
+import { escapeRegExp } from "../utils/regex";
 import { RawToggle } from "./RawToggle";
 import { TocToggle } from "./TocToggle";
 import { CopyButton } from "./CopyButton";
@@ -58,10 +59,6 @@ interface SearchHitMarker {
 
 const SEARCH_HIT_COLUMN_OFFSET = -24;
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function collectSearchHitMarkers(root: HTMLElement, query: string): SearchHitMarker[] {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -108,7 +105,7 @@ function collectSearchHitMarkers(root: HTMLElement, query: string): SearchHitMar
             height,
           });
         }
-        range.detach?.();
+
       }
     }
     current = walker.nextNode();

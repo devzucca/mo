@@ -1622,20 +1622,6 @@ func extractHeadingLine(line string) string {
 	return strings.TrimSpace(after)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func handleFileRaw(state *State) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")

@@ -207,12 +207,7 @@ export function App() {
   }, [initialFileId]);
 
   useEffect(() => {
-    if (searchQuery == null) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      return;
-    }
-    if (searchQuery.trim() === "") {
+    if (!searchQuery?.trim()) {
       setSearchResults([]);
       setSearchLoading(false);
       return;
@@ -220,22 +215,26 @@ export function App() {
 
     let cancelled = false;
     setSearchLoading(true);
-    fetchSearchResults(searchQuery, activeGroup)
-      .then((resp) => {
-        if (!cancelled) {
-          setSearchResults(resp.results);
-          setSearchLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSearchResults([]);
-          setSearchLoading(false);
-        }
-      });
+
+    const timer = setTimeout(() => {
+      fetchSearchResults(searchQuery, activeGroup)
+        .then((resp) => {
+          if (!cancelled) {
+            setSearchResults(resp.results);
+            setSearchLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSearchResults([]);
+            setSearchLoading(false);
+          }
+        });
+    }, 300);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [searchQuery, activeGroup]);
 
