@@ -321,7 +321,11 @@ export function App() {
   }, [activeGroup]);
 
   const handleSearchToggle = useCallback(() => {
-    setSearchQuery((prev) => (prev != null ? null : ""));
+    setSearchQuery((prev) => {
+      if (prev != null) return null;
+      setSidebarOpen(true);
+      return "";
+    });
   }, []);
 
   const handleGroupChange = (name: string) => {
