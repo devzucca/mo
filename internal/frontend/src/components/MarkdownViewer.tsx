@@ -45,7 +45,9 @@ function rehypeStripClobberPrefix() {
     }
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (tree: any) => { walk(tree); };
+  return (tree: any) => {
+    walk(tree);
+  };
 }
 
 // Extend default GitHub-compatible schema to allow style/align attributes used in raw HTML
@@ -636,7 +638,10 @@ export function MarkdownViewer({
                   if (target) {
                     e.preventDefault();
                     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-                    target.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+                    target.scrollIntoView({
+                      behavior: reduced ? "auto" : "smooth",
+                      block: "start",
+                    });
                     history.pushState(null, "", href);
                   }
                 }}
