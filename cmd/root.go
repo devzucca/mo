@@ -126,6 +126,9 @@ Supported Markdown Features:
   - GitHub Flavored Markdown (tables, task lists, strikethrough, autolinks)
   - Syntax-highlighted code blocks (via Shiki)
   - Mermaid diagrams
+  - LaTeX math rendering (via KaTeX)
+  - GitHub Alerts (admonitions)
+  - Fullscreen zoom modal for images and Mermaid diagrams
   - YAML frontmatter (displayed as a collapsible metadata block)
   - MDX files (rendered as Markdown with import/export stripped and JSX tags escaped)
   - Raw HTML
