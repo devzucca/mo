@@ -63,6 +63,7 @@ const sanitizeSchema = {
 interface MarkdownViewerProps {
   fileId: string;
   fileName: string;
+  activeGroup: string;
   revision: number;
   onFileOpened: (fileId: string) => void;
   onHeadingsChange: (headings: TocHeading[]) => void;
@@ -522,6 +523,7 @@ function RawView({ content }: { content: string }) {
 export function MarkdownViewer({
   fileId,
   fileName,
+  activeGroup,
   revision,
   onFileOpened,
   onHeadingsChange,
@@ -550,7 +552,7 @@ export function MarkdownViewer({
 
   useEffect(() => {
     let cancelled = false;
-    fetchFileContent(fileId)
+    fetchFileContent(activeGroup, fileId)
       .then((data) => {
         if (!cancelled) {
           setContent(data.content);
@@ -566,19 +568,19 @@ export function MarkdownViewer({
     return () => {
       cancelled = true;
     };
-  }, [fileId, revision]);
+  }, [activeGroup, fileId, revision]);
 
   const handleLinkClick = useCallback(
     async (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
       e.preventDefault();
       try {
-        const entry = await openRelativeFile(fileId, href);
+        const entry = await openRelativeFile(activeGroup, fileId, href);
         onFileOpened(entry.id);
       } catch {
         // fallback: do nothing
       }
     },
-    [fileId, onFileOpened],
+    [activeGroup, fileId, onFileOpened],
   );
 
   const components: Components = useMemo(
@@ -604,7 +606,7 @@ export function MarkdownViewer({
         );
       },
       img: ({ src, alt, ...props }) => {
-        const resolvedSrc = resolveImageSrc(src, fileId);
+        const resolvedSrc = resolveImageSrc(src, activeGroup, fileId);
         if (onZoom && resolvedSrc) {
           return (
             <span className="relative inline-block group/img">
@@ -617,10 +619,10 @@ export function MarkdownViewer({
             </span>
           );
         }
-        return <img src={resolveImageSrc(src, fileId)} alt={alt} {...props} />;
+        return <img src={resolveImageSrc(src, activeGroup, fileId)} alt={alt} {...props} />;
       },
       a: ({ href, children, ...props }) => {
-        const resolved = resolveLink(href, fileId);
+        const resolved = resolveLink(href, activeGroup, fileId);
         switch (resolved.type) {
           case "external":
             return (
