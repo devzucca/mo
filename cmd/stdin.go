@@ -23,12 +23,18 @@ func isStdinPipe() bool {
 	return fi.Mode()&os.ModeCharDevice == 0
 }
 
+const maxStdinSize = 10 << 20 // 10MB (same as server upload limit)
+
 // readStdin reads all content from the given reader and returns
 // a generated name in the format "stdin-<hash>.md" along with the content.
 func readStdin(r io.Reader) (name string, content string, err error) {
-	data, err := io.ReadAll(r)
+	limited := io.LimitReader(r, maxStdinSize+1)
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to read stdin: %w", err)
+	}
+	if len(data) > maxStdinSize {
+		return "", "", fmt.Errorf("stdin content too large (max 10MB)")
 	}
 	c := string(data)
 	return stdinName(c), c, nil

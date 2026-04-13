@@ -777,6 +777,29 @@ func TestReadStdin(t *testing.T) {
 		}
 	})
 
+	t.Run("exceeds max size", func(t *testing.T) {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			defer w.Close()
+			// Write just over the limit
+			buf := make([]byte, maxStdinSize+1)
+			if _, err := w.Write(buf); err != nil {
+				t.Errorf("failed to write to pipe: %v", err)
+			}
+		}()
+
+		_, _, err = readStdin(r)
+		if err == nil {
+			t.Fatal("expected error for oversized stdin")
+		}
+		if !strings.Contains(err.Error(), "too large") {
+			t.Errorf("got error %q, want 'too large' message", err.Error())
+		}
+	})
+
 	t.Run("empty stdin", func(t *testing.T) {
 		r, w, err := os.Pipe()
 		if err != nil {
