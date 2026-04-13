@@ -759,10 +759,10 @@ func TestReadStdin(t *testing.T) {
 		}
 		content := "# Test Document\n\nHello world."
 		go func() {
+			defer w.Close()
 			if _, err := w.Write([]byte(content)); err != nil {
-				return
+				t.Errorf("failed to write to pipe: %v", err)
 			}
-			w.Close()
 		}()
 
 		name, got, err := readStdin(r)
