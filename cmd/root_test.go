@@ -759,7 +759,9 @@ func TestReadStdin(t *testing.T) {
 		}
 		content := "# Test Document\n\nHello world."
 		go func() {
-			_, _ = w.Write([]byte(content))
+			if _, err := w.Write([]byte(content)); err != nil {
+				return
+			}
 			w.Close()
 		}()
 
